@@ -1,0 +1,135 @@
+{
+  "settings": {
+    "partnerName": "LauryPrueba",
+    "partnerTZ": "America/New_York",
+    "revealHour": 15,
+    "revealMinute": 0,
+    "startDateISO": "2025-10-15",
+    "numDays": 15,
+    "frequency": "daily",
+    "weekdays": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  "notes": [
+    "Hoy y siempre: contigo.",
+    "Proud of you today and always.",
+    "I’d cross timezones for your smile.",
+    "You are my favorite notification.",
+    "Coffee soon, same mug different city.",
+    "Te pienso más de lo que digo.",
+    "You make hard days softer.",
+    "Our distance is temporary—our love isn’t."
+  ],
+  "schedule": [
+    {
+      "n": 1,
+      "dateISO": "2025-10-15",
+      "noteIndex": 4,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 2,
+      "dateISO": "2025-10-16",
+      "noteIndex": 3,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 3,
+      "dateISO": "2025-10-17",
+      "noteIndex": 6,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 4,
+      "dateISO": "2025-10-18",
+      "noteIndex": 7,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 5,
+      "dateISO": "2025-10-19",
+      "noteIndex": 1,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 6,
+      "dateISO": "2025-10-20",
+      "noteIndex": 0,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 7,
+      "dateISO": "2025-10-21",
+      "noteIndex": 2,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 8,
+      "dateISO": "2025-10-22",
+      "noteIndex": 5,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 9,
+      "dateISO": "2025-10-23",
+      "noteIndex": 5,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 10,
+      "dateISO": "2025-10-24",
+      "noteIndex": 2,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 11,
+      "dateISO": "2025-10-25",
+      "noteIndex": 6,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 12,
+      "dateISO": "2025-10-26",
+      "noteIndex": 4,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 13,
+      "dateISO": "2025-10-27",
+      "noteIndex": 3,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 14,
+      "dateISO": "2025-10-28",
+      "noteIndex": 1,
+      "revealed": false,
+      "revealedAt": null
+    },
+    {
+      "n": 15,
+      "dateISO": "2025-10-29",
+      "noteIndex": 0,
+      "revealed": false,
+      "revealedAt": null
+    }
+  ]
+}
