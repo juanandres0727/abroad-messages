@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>💌 Sorpresa de Hoy</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <div class="title">💌 Sorpresa de Hoy</div>
+        <div class="subtitle">Se abre a tu hora local!</div>
+      </div>
+      <div class="btns">
+        <button class="ghost pill" id="resetBtn" title="Limpiar datos guardados si es necesario">Restablecer</button>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="today" id="todayBox">
+        <div class="tz-badge" id="tzBadge">—</div>
+        <div id="todayState" class="hint">Cargando…</div>
+        <div class="countdown" id="countdown">–:–:–</div>
+        <div class="note" id="noteText" style="display:none"></div>
+        <div class="today-actions">
+          <button id="checkNowBtn">Ver Nota</button>
+          <button class="ghost" id="copyBtn">Copiar nota</button>
+        </div>
+        <div class="confetti" id="confetti"></div>
+      </div>
+      <div class="footer">
+        Si abres antes de la hora de revelación, verás una cuenta regresiva. Si abres después, la nota aparece con 🎉.
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const { DateTime } = luxon;
+    const STORAGE_KEY = 'surpriseScheduler_v1';
+
+    // DOM
+    const els = {
+      tzBadge: document.getElementById('tzBadge'),
+      todayState: document.getElementById('todayState'),
+      countdown: document.getElementById('countdown'),
+      noteText: document.getElementById('noteText'),
+      checkNowBtn: document.getElementById('checkNowBtn'),
+      copyBtn: document.getElementById('copyBtn'),
+      resetBtn: document.getElementById('resetBtn'),
+      confetti: document.getElementById('confetti'),
+    };
+
+    // Storage helpers
+    const save = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    const load = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null; } catch { return null; } };
+
+    // Showers
+    function showToday(entry, s){
+      const text = s.notes[entry.noteIndex];
+      els.noteText.textContent = text; els.noteText.style.display='block';
+      els.todayState.textContent = `¡Revelado para ${s.settings.partnerName || 'ti'}!`;
+      els.countdown.textContent = '';
+    }
+
+    function showCountdown(s){
+      const now = DateTime.now().setZone(s.settings.partnerTZ);
+      const todayTarget = now.set({hour:s.settings.revealHour, minute:s.settings.revealMinute, second:0, millisecond:0});
+      const target = (now > todayTarget) ? todayTarget.plus({days:1}) : todayTarget;
+      const diff = target.diff(now, ['hours','minutes','seconds']).toObject();
+      els.todayState.textContent = `Próxima revelación a las ${target.toFormat('HH:mm')} (${s.settings.partnerTZ})`;
+      els.countdown.textContent = `${String(Math.floor(diff.hours||0)).padStart(2,'0')}:${String(Math.floor(diff.minutes||0)).padStart(2,'0')}:${String(Math.floor(diff.seconds||0)).padStart(2,'0')}`;
+      els.noteText.style.display='none';
+    }
+
+    // Logic
+    function tickCountdown(){
+      const s = load(); if(!s){ els.todayState.textContent = 'Esperando el horario…'; return; }
+      const now = DateTime.now().setZone(s.settings.partnerTZ);
+      const today = now.startOf('day').toISODate();
+      const entry = s.schedule.find(e => e.dateISO === today);
+      if (entry && entry.revealed) { showToday(entry, s); } else { showCountdown(s); }
+      els.tzBadge.textContent = s.settings.partnerTZ;
+    }
+
+    function revealIfDue(){
+      const s = load(); if(!s) return false;
+      const now = DateTime.now().setZone(s.settings.partnerTZ);
+      const today = now.startOf('day').toISODate();
+      const entry = s.schedule.find(e=>e.dateISO === today);
+      const due = entry && !entry.revealed &&
+                  now >= DateTime.fromISO(entry.dateISO, {zone:s.settings.partnerTZ})
+                          .set({hour:s.settings.revealHour, minute:s.settings.revealMinute, second:0, millisecond:0});
+      if(due){
+        entry.revealed = true; entry.revealedAt = now.toISO();
+        save(s);
+        showToday(entry, s);
+        fireConfetti();
+        return true;
+      }
+      if(entry && entry.revealed){ showToday(entry, s); return true; }
+      showCountdown(s);
+      return false;
+    }
+
+    // Auto-load schedule.json on first visit
+    async function autoLoadScheduleFromJSON(){
+      const existing = load(); if (existing) return;
+      try {
+        const res = await fetch('schedule.json?v=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) { els.todayState.textContent = 'Horario no encontrado aún.'; return; }
+        const obj = await res.json();
+        if (obj && obj.settings && obj.notes && obj.schedule) {
+          save(obj);
+          revealIfDue();
+        }
+      } catch { els.todayState.textContent = 'Error al cargar el horario.'; }
+    }
+
+    // Confetti + helpers
+    function fireConfetti(){
+      const cont = els.confetti; cont.innerHTML = '';
+      const colors = ['#ff6b9d','#c44569','#8e44ad','#a569bd','#ff7675'];
+      for(let i=0;i<100;i++){
+        const p = document.createElement('div'); p.className='p';
+        p.style.left = Math.random()*100 + 'vw';
+        const dur = 2 + Math.random()*2.5; p.style.animation = `fall ${dur}s linear forwards`;
+        p.style.background = colors[i % colors.length];
+        p.style.transform = `translateY(-30px) rotate(${Math.random()*360}deg)`;
+        p.style.opacity = (0.8 + Math.random()*0.2).toFixed(2);
+        p.style.borderRadius = Math.random() < .5 ? '2px' : '999px';
+        cont.appendChild(p);
+      }
+      setTimeout(()=>{ cont.innerHTML=''; }, 5000);
+    }
+
+    function copyNote(){
+      const txt = els.noteText.textContent?.trim();
+      if(!txt){ alert('Aún no se ha revelado ninguna nota.'); return; }
+      navigator.clipboard.writeText(txt).then(()=>{
+        els.copyBtn.textContent = '¡Copiado!'; setTimeout(()=>els.copyBtn.textContent='Copiar nota', 1200);
+      });
+    }
+
+    function resetAll(){
+      if(!confirm('¿Limpiar el horario guardado en este dispositivo?')) return;
+      localStorage.removeItem(STORAGE_KEY);
+      els.noteText.style.display='none';
+      els.todayState.textContent = 'Restablecimiento completo. Recargando…';
+      setTimeout(()=>location.reload(), 400);
+    }
+
+    // Events
+    els.checkNowBtn.addEventListener('click', ()=>{ if(!revealIfDue()){ tickCountdown(); }});
+    els.copyBtn.addEventListener('click', copyNote);
+    els.resetBtn.addEventListener('click', resetAll);
+
+    // Init
+    autoLoadScheduleFromJSON().then(()=>{ revealIfDue(); });
+    (function loop(){ tickCountdown(); setTimeout(loop, 1000); })();
+  </script>
+</body>
+</html>

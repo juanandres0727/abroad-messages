@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Programador de Sorpresas</title>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- Luxon for robust timezone handling -->
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <div class="title">💌 Sorpresas para ella</div>
+        <div class="subtitle">Escribe notas dulces con anticipación → se revelarán en los días seleccionados en <span id="subTZ">su zona horaria</span>. Funciona completamente sin conexión.</div>
+      </div>
+      <div class="btns">
+        <button class="ghost pill" id="exportBtn">Exportar JSON</button>
+        <input type="file" id="importInput" accept="application/json" hidden>
+        <button class="ghost pill" id="importBtn">Importar</button>
+        <button class="ghost pill danger" id="clearBtn" title="Eliminar todos los datos">Restablecer</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- Left: Settings + Notes + Schedule -->
+      <section class="card">
+        <h2>1) Configuración</h2>
+        <div class="row">
+          <div>
+            <label>Su nombre</label>
+            <input id="partnerName" placeholder="e.g., ella" />
+          </div>
+          <div>
+            <label>Su zona horaria</label>
+            <input id="partnerTZ" list="tzList" placeholder="e.g., Europe/Madrid" />
+            <datalist id="tzList"></datalist>
+            <div class="hint">Consejo: Comienza a escribir (ej., "Europe/" o "America/").</div>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Hora de revelación (su hora local)</label>
+            <input id="revealTime" type="time" value="09:00" />
+          </div>
+          <div>
+            <label>Fecha de inicio (su fecha local)</label>
+            <input id="startDate" type="date" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>¿Cuántos días programar?</label>
+            <input id="numDays" type="number" min="1" max="400" value="30" />
+          </div>
+          <div>
+            <label>¿Uno por día o días específicos de la semana?</label>
+            <select id="frequency">
+              <option value="daily">Todos los días</option>
+              <option value="weekdays">Días laborables (Lun–Vie)</option>
+              <option value="custom">Días personalizados…</option>
+            </select>
+          </div>
+        </div>
+        <div id="customWeekdays" class="row" style="display:none">
+          <div><label><input type="checkbox" class="wd" value="1" checked> Lun</label></div>
+          <div><label><input type="checkbox" class="wd" value="2" checked> Mar</label></div>
+          <div><label><input type="checkbox" class="wd" value="3" checked> Mié</label></div>
+          <div><label><input type="checkbox" class="wd" value="4" checked> Jue</label></div>
+          <div><label><input type="checkbox" class="wd" value="5" checked> Vie</label></div>
+          <div><label><input type="checkbox" class="wd" value="6"> Sáb</label></div>
+          <div><label><input type="checkbox" class="wd" value="7"> Dom</label></div>
+        </div>
+
+        <h2 style="margin-top:14px">2) Escribe tus notas</h2>
+        <label>Una por línea (no necesitas comillas). Los emojis son bienvenidos ✨</label>
+        <textarea id="notes" placeholder="You’re my favorite hello and hardest goodbye.
+Te extraño un montón.
+Counting days to our next hug.
+You make distance feel small.
+I’m proud of you—keep going."></textarea>
+        <div class="btns">
+          <button class="primary" id="generateBtn">Generar / Actualizar Horario</button>
+          <button id="shuffleBtn">Mezclar Notas</button>
+        </div>
+        <div class="hint">La programación asigna notas aleatoriamente a cada día elegido. Si tienes menos notas que días, se repetirán después de usar cada una una vez.</div>
+
+        <h2 style="margin-top:18px">3) Horario</h2>
+        <div id="scheduleWrap">
+          <table id="scheduleTable" aria-label="Schedule table">
+            <thead><tr><th>#</th><th>Fecha (su zona)</th><th>Hora</th><th>Nota</th><th>Estado</th></tr></thead>
+            <tbody id="schedBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Right: Today panel -->
+      <section class="card">
+        <h2>Sorpresa de Hoy</h2>
+        <div class="today" id="todayBox">
+          <div class="tz-badge" id="tzBadge">—</div>
+          <div id="todayState" class="hint">Aún no se ha revelado ninguna nota.</div>
+          <div class="countdown" id="countdown">–:–:–</div>
+          <div class="note" id="noteText" style="display:none"></div>
+          <div class="btns" style="margin-top:12px">
+            <button class="accent" id="revealNowBtn">Revelar ahora</button>
+            <button id="checkNowBtn">Verificar ahora</button>
+            <button class="ghost" id="copyBtn">Copiar nota</button>
+          </div>
+          <div class="confetti" id="confetti"></div>
+        </div>
+        <div class="footer">Si la página no estaba abierta en el momento exacto, se revelará la próxima vez que la abras después de esa hora.</div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const { DateTime } = luxon;
+    const STORAGE_KEY = 'surpriseScheduler_v1';
+
+    const els = {
+      partnerName: document.getElementById('partnerName'),
+      partnerTZ: document.getElementById('partnerTZ'),
+      revealTime: document.getElementById('revealTime'),
+      startDate: document.getElementById('startDate'),
+      numDays: document.getElementById('numDays'),
+      frequency: document.getElementById('frequency'),
+      customWeekdays: document.getElementById('customWeekdays'),
+      wdChecks: () => Array.from(document.querySelectorAll('.wd')),
+      notes: document.getElementById('notes'),
+      generateBtn: document.getElementById('generateBtn'),
+      shuffleBtn: document.getElementById('shuffleBtn'),
+      schedBody: document.getElementById('schedBody'),
+      scheduleTable: document.getElementById('scheduleTable'),
+      todayState: document.getElementById('todayState'),
+      countdown: document.getElementById('countdown'),
+      noteText: document.getElementById('noteText'),
+      revealNowBtn: document.getElementById('revealNowBtn'),
+      checkNowBtn: document.getElementById('checkNowBtn'),
+      copyBtn: document.getElementById('copyBtn'),
+      tzBadge: document.getElementById('tzBadge'),
+      tzSub: document.getElementById('subTZ'),
+      exportBtn: document.getElementById('exportBtn'),
+      importBtn: document.getElementById('importBtn'),
+      importInput: document.getElementById('importInput'),
+      clearBtn: document.getElementById('clearBtn'),
+      tzList: document.getElementById('tzList'),
+      todayBox: document.getElementById('todayBox'),
+      confetti: document.getElementById('confetti'),
+    };
+
+    // Populate timezone list if supported
+    try {
+      const zones = Intl.supportedValuesOf?.('timeZone') || [];
+      zones.forEach(z => {
+        const opt = document.createElement('option');
+        opt.value = z; els.tzList.appendChild(opt);
+      });
+    } catch(_){}
+
+    // Helpers
+    const save = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    const load = () => {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null; } catch { return null; }
+    }
+
+    const sampleNotes = `You are my favorite notification.
+Te pienso más de lo que digo.
+Proud of you today and always.
+Our distance is temporary—our love isn’t.
+Coffee soon, same mug different city.
+I’d cross timezones for your smile.
+Hoy y siempre: contigo.
+You make hard days softer.`;
+
+    function readSettings(){
+      const tz = els.partnerTZ.value.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const [h,m] = (els.revealTime.value || '09:00').split(':').map(x=>parseInt(x,10));
+      const start = els.startDate.value ? DateTime.fromISO(els.startDate.value, {zone: tz}).startOf('day') : DateTime.now().setZone(tz).startOf('day');
+      const freq = els.frequency.value;
+      const weekdays = els.wdChecks().filter(ch=>ch.checked).map(ch=>parseInt(ch.value,10));
+      return {
+        partnerName: els.partnerName.value.trim() || 'Ella',
+        partnerTZ: tz,
+        revealHour: h, revealMinute: m,
+        startDateISO: start.toISODate(),
+        numDays: Math.max(1, Math.min(400, parseInt(els.numDays.value||'30',10))),
+        frequency: freq,
+        weekdays,
+      };
+    }
+
+    function readNotes(){
+      const raw = (els.notes.value || '').split(/\n/).map(s=>s.trim()).filter(Boolean);
+      return raw.length ? raw : sampleNotes.split(/\n/);
+    }
+
+    function shuffle(arr){
+      for(let i = arr.length - 1; i > 0; i--){
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function nextDates(settings){
+      const { partnerTZ, startDateISO, numDays, frequency, weekdays } = settings;
+      let d = DateTime.fromISO(startDateISO, {zone: partnerTZ}).startOf('day');
+      const out = [];
+      while(out.length < numDays){
+        const wd = d.weekday; // 1 = Monday ... 7 = Sunday
+        const allow = (frequency === 'daily') ||
+                      (frequency === 'weekdays' && wd >=1 && wd <=5) ||
+                      (frequency === 'custom' && weekdays.includes(wd));
+        if(allow) out.push(d);
+        d = d.plus({days:1});
+      }
+      return out;
+    }
+
+    function assignNotesToDates(settings, notes){
+      const dates = nextDates(settings);
+      const base = notes.map((t, idx)=>({ idx, t }));
+      let pool = shuffle(base.slice());
+      const entries = [];
+      dates.forEach((dt, i)=>{
+        if(pool.length === 0) pool = shuffle(base.slice());
+        const pick = pool.pop();
+        entries.push({ n: i+1, dateISO: dt.toISODate(), noteIndex: pick.idx, revealed:false, revealedAt:null });
+      });
+      return entries;
+    }
+
+    function renderSchedule(settings, notes, schedule){
+      els.schedBody.innerHTML = '';
+      schedule.forEach((row, i)=>{
+        const tr = document.createElement('tr');
+        if(row.revealed) tr.classList.add('revealed');
+        const date = DateTime.fromISO(row.dateISO, {zone: settings.partnerTZ});
+        const time = date.set({hour: settings.revealHour, minute: settings.revealMinute});
+        const status = row.revealed ? `<span class="pill-badge success">Revelado</span>` : `<span class="pill-badge scheduled">Programado</span>`;
+        tr.innerHTML = `<td>${i+1}</td>
+                        <td>${date.toFormat('ccc, LLL d yyyy')}</td>
+                        <td>${time.toFormat('HH:mm')}</td>
+                        <td title="${notes[row.noteIndex]}">${escapeHtml(notes[row.noteIndex]).slice(0,60)}${notes[row.noteIndex].length>60?'…':''}</td>
+                        <td>${status}</td>`;
+        els.schedBody.appendChild(tr);
+      });
+    }
+
+    function escapeHtml(s){
+      return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function persist(state){ save(state); }
+
+    function loadIntoUI(){
+      const saved = load();
+      if(!saved) {
+        els.notes.value = sampleNotes;
+        els.startDate.value = DateTime.local().toISODate();
+        els.partnerTZ.value = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        updateTZBadge();
+        return;
+      }
+      const { settings, notes, schedule } = saved;
+      els.partnerName.value = settings.partnerName || '';
+      els.partnerTZ.value = settings.partnerTZ || '';
+      els.revealTime.value = `${String(settings.revealHour).padStart(2,'0')}:${String(settings.revealMinute).padStart(2,'0')}`;
+      els.startDate.value = settings.startDateISO || DateTime.local().toISODate();
+      els.numDays.value = settings.numDays || 30;
+      els.frequency.value = settings.frequency || 'daily';
+      if(settings.frequency === 'custom'){
+        els.customWeekdays.style.display = '';
+        els.wdChecks().forEach(ch => ch.checked = settings.weekdays?.includes(parseInt(ch.value,10)) || false);
+      }
+      els.notes.value = notes.join('\n');
+      renderSchedule(settings, notes, schedule);
+      updateTZBadge();
+    }
+
+    function deepEqual(a,b){ return JSON.stringify(a)===JSON.stringify(b); }
+
+    function state(){
+      const settings = readSettings();
+      const notes = readNotes();
+      const saved = load();
+      const schedule = saved && deepEqual(saved.settings, settings) && deepEqual(saved.notes, notes)
+        ? saved.schedule
+        : assignNotesToDates(settings, notes);
+      return { settings, notes, schedule };
+    }
+
+    // Keep note visible after reveal; only show countdown if not revealed
+    function tickCountdown(){
+      const s = load(); if(!s) return;
+      const now = DateTime.now().setZone(s.settings.partnerTZ);
+      const today = now.startOf('day').toISODate();
+      const entry = s.schedule.find(e => e.dateISO === today);
+      if (entry && entry.revealed) {
+        showToday(entry, s);
+      } else {
+        showCountdown(s);
+      }
+    }
+
+    function revealIfDue(){
+      const s = load(); if(!s) return false;
+      const now = DateTime.now().setZone(s.settings.partnerTZ);
+      const today = now.startOf('day').toISODate();
+      const entry = s.schedule.find(e=>e.dateISO === today);
+      const due = entry && !entry.revealed &&
+                  now >= DateTime.fromISO(entry.dateISO, {zone:s.settings.partnerTZ})
+                          .set({hour:s.settings.revealHour, minute:s.settings.revealMinute, second:0, millisecond:0});
+      if(due){
+        entry.revealed = true; entry.revealedAt = now.toISO();
+        persist(s);
+        showToday(entry, s);
+        fireConfetti();
+        return true;
+      }
+      if(entry && entry.revealed){ showToday(entry, s); return true; }
+      showCountdown(s);
+      return false;
+    }
+
+    function showToday(entry, s){
+      const text = s.notes[entry.noteIndex];
+      els.noteText.textContent = text; els.noteText.style.display='block';
+      els.todayState.textContent = `¡Revelado para ${s.settings.partnerName}!`;
+      els.countdown.textContent = '';
+    }
+
+    function showCountdown(s){
+      const now = DateTime.now().setZone(s.settings.partnerTZ);
+      const todayTarget = now.set({hour:s.settings.revealHour, minute:s.settings.revealMinute, second:0, millisecond:0});
+      const target = (now > todayTarget) ? todayTarget.plus({days:1}) : todayTarget;
+      const diff = target.diff(now, ['hours','minutes','seconds']).toObject();
+      els.todayState.textContent = `Próxima revelación para ${s.settings.partnerName} a las ${target.toFormat('HH:mm')} (${s.settings.partnerTZ})`;
+      els.countdown.textContent = `${String(Math.floor(diff.hours||0)).padStart(2,'0')}:${String(Math.floor(diff.minutes||0)).padStart(2,'0')}:${String(Math.floor(diff.seconds||0)).padStart(2,'0')}`;
+      els.noteText.style.display='none';
+    }
+
+    function revealNow(){
+      const s = load(); if(!s) return alert('Por favor configura y genera un horario primero.');
+      const now = DateTime.now().setZone(s.settings.partnerTZ);
+      const today = now.startOf('day').toISODate();
+      const entry = s.schedule.find(e=>e.dateISO === today) || s.schedule.find(e=>!e.revealed) || s.schedule[0];
+      entry.revealed = true; entry.revealedAt = now.toISO();
+      persist(s);
+      renderSchedule(s.settings, s.notes, s.schedule);
+      showToday(entry, s); fireConfetti();
+    }
+
+    function updateTZBadge(){
+      const tz = els.partnerTZ.value || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      els.tzBadge.textContent = tz; document.getElementById('subTZ').textContent = tz;
+    }
+
+    function copyNote(){
+      const txt = els.noteText.textContent?.trim();
+      if(!txt){ alert('Aún no se ha revelado ninguna nota.'); return; }
+      navigator.clipboard.writeText(txt).then(()=>{
+        els.copyBtn.textContent = '¡Copiado!'; setTimeout(()=>els.copyBtn.textContent='Copiar nota', 1200);
+      });
+    }
+
+    // Confetti
+    function fireConfetti(){
+      const cont = els.confetti; cont.innerHTML = '';
+      const colors = ['#60a5fa','#34d399','#f472b6','#fbbf24','#a78bfa'];
+      const N = 120;
+      for(let i=0;i<N;i++){
+        const p = document.createElement('div'); p.className='p';
+        p.style.left = Math.random()*100 + 'vw';
+        const dur = 2 + Math.random()*2.5; p.style.animation = `fall ${dur}s linear forwards`;
+        p.style.background = colors[i % colors.length];
+        p.style.transform = `translateY(-30px) rotate(${Math.random()*360}deg)`;
+        p.style.opacity = (0.8 + Math.random()*0.2).toFixed(2);
+        p.style.borderRadius = Math.random() < .5 ? '2px' : '999px';
+        cont.appendChild(p);
+      }
+      setTimeout(()=>{ cont.innerHTML=''; }, 5000);
+    }
+
+    // Export / Import / Reset
+    function exportJSON(){
+      const s = load() || state();
+      const blob = new Blob([JSON.stringify(s, null, 2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `surprise_scheduler_${Date.now()}.json`; a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function importJSON(file){
+      const reader = new FileReader();
+      reader.onload = (e)=>{
+        try {
+          const obj = JSON.parse(e.target.result);
+          if(!obj.settings || !obj.notes || !obj.schedule) throw new Error('Invalid file');
+          save(obj); loadIntoUI(); revealIfDue();
+        } catch(err){ alert('Error en la importación: '+ err.message); }
+      };
+      reader.readAsText(file);
+    }
+
+    function resetAll(){
+      if(!confirm('Esto eliminará todas las notas, configuraciones y horarios. ¿Continuar?')) return;
+      localStorage.removeItem(STORAGE_KEY);
+      loadIntoUI(); els.schedBody.innerHTML=''; els.noteText.style.display='none'; els.todayState.textContent='Aún no se ha revelado ninguna nota.'; els.countdown.textContent='–:–:–';
+    }
+
+    // Auto-load schedule.json on first visit (so she doesn’t need Import)
+    async function autoLoadScheduleFromJSON(){
+      const existing = load(); if (existing) return;
+      try {
+        const res = await fetch('schedule.json?v=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const obj = await res.json();
+        if (obj && obj.settings && obj.notes && obj.schedule) {
+          save(obj);
+          loadIntoUI();
+          revealIfDue();
+        }
+      } catch (_) { /* ignore */ }
+    }
+
+    // Events
+    els.generateBtn.addEventListener('click', ()=>{ const s = state(); renderSchedule(s.settings, s.notes, s.schedule); persist(s); tickCountdown(); alert('¡Horario actualizado!'); });
+    els.shuffleBtn.addEventListener('click', ()=>{
+      const list = els.notes.value.split(/\n/).filter(Boolean); if(list.length<2){ return alert('Necesitas al menos dos notas para mezclar.'); }
+      els.notes.value = shuffle(list).join('\n');
+    });
+    els.partnerTZ.addEventListener('input', updateTZBadge);
+    els.frequency.addEventListener('change', ()=>{ els.customWeekdays.style.display = els.frequency.value==='custom' ? '' : 'none'; });
+    els.revealNowBtn.addEventListener('click', revealNow);
+    els.checkNowBtn.addEventListener('click', ()=>{ if(!revealIfDue()){ tickCountdown(); }});
+    els.copyBtn.addEventListener('click', copyNote);
+    els.exportBtn.addEventListener('click', exportJSON);
+    els.importBtn.addEventListener('click', ()=> els.importInput.click());
+    els.importInput.addEventListener('change', (e)=>{ const f = e.target.files[0]; if(f) importJSON(f); e.target.value=''; });
+    els.clearBtn.addEventListener('click', resetAll);
+
+    // Init — auto import schedule.json if nothing saved; then run the loop
+    loadIntoUI();
+    updateTZBadge();
+
+    (async () => {
+      let s = load();
+      if (!s) {
+        await autoLoadScheduleFromJSON();
+        s = load();
+        if (!s) { // still nothing? create from UI fields
+          s = state(); 
+          save(s); 
+          renderSchedule(s.settings, s.notes, s.schedule);
+        }
+      }
+      revealIfDue();
+      (function loop(){ tickCountdown(); setTimeout(loop, 1000); })();
+    })();
+  </script>
+</body>
+</html>
